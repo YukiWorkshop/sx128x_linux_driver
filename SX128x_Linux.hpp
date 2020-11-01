@@ -44,6 +44,8 @@ public:
 
 	void StopIrqHandler();
 
+	void SetSpiSpeed(uint32_t hz);
+
 private:
 	PinConfig pin_cfg;
 
@@ -58,7 +60,6 @@ private:
 	GPIO::LineSingle RadioReset;
 	GPIO::LineSingle Busy;
 	std::optional<GPIO::LineSingle> TxEn, RxEn;
-
 
 	uint8_t HalGpioRead(GpioPinFunction_t func) override;
 

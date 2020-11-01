@@ -20,7 +20,7 @@
 
 SX128x_Linux::SX128x_Linux(const std::string &spi_dev_path, uint16_t gpio_dev_num, SX128x_Linux::PinConfig pin_config) :
 	pin_cfg(pin_config),
-	RadioSpi(spi_dev_path, SPI_MODE_0|SPI_NO_CS, 8, 8000000),
+	RadioSpi(spi_dev_path, SPI_MODE_0|SPI_NO_CS, 8, 500000),
 	RadioGpio(gpio_dev_num),
 	Busy(RadioGpio.line(pin_cfg.busy, GPIO::LineMode::Input, 0, "SX128x BUSY")),
 	RadioNss(RadioGpio.line(pin_cfg.nss, GPIO::LineMode::Output, 1, "SX128x NSS")),
@@ -34,15 +34,24 @@ SX128x_Linux::SX128x_Linux(const std::string &spi_dev_path, uint16_t gpio_dev_nu
 		RxEn = RadioGpio.line(pin_cfg.rx_en, GPIO::LineMode::Output, 0, "SX128x RXEN");
 	}
 
+	int i = 1;
 	for (auto it : {pin_config.dio1, pin_config.dio2, pin_config.dio3}) {
+		std::string label = "SX128x DIO";
+		label += std::to_string(i);
+		i++;
+
 		if (it != -1) {
 			RadioGpio.on_event(it, GPIO::LineMode::Input, GPIO::EventMode::RisingEdge,
 					   [this](GPIO::EventType t, uint64_t) {
 						   if (t == GPIO::EventType::RisingEdge)
 							   ProcessIrqs();
-					   });
+					   }, label);
 		}
 	}
+}
+
+void SX128x_Linux::SetSpiSpeed(uint32_t hz) {
+	RadioSpi.set_max_speed_hz(hz);
 }
 
 void SX128x_Linux::SetExternalLock(std::mutex &m) {
@@ -85,13 +94,13 @@ void SX128x_Linux::HalSpiTransfer(uint8_t *buffer_in, const uint8_t *buffer_out,
 	if (ExtLock) {
 		std::lock_guard<std::mutex> lg(*ExtLock);
 
-		RadioNss.write(1);
-		RadioSpi.transfer(buffer_out, buffer_in, size);
 		RadioNss.write(0);
+		RadioSpi.transfer(buffer_out, buffer_in, size);
+		RadioNss.write(1);
 	} else {
-		RadioNss.write(1);
-		RadioSpi.transfer(buffer_out, buffer_in, size);
 		RadioNss.write(0);
+		RadioSpi.transfer(buffer_out, buffer_in, size);
+		RadioNss.write(1);
 	}
 }
 
@@ -118,3 +127,4 @@ void SX128x_Linux::HalPostRx() {
 		RxEn->write(0);
 	}
 }
+
