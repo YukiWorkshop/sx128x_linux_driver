@@ -34,3 +34,7 @@ CPMAddPackage(
 add_library(sx128x_linux_driver SX128x_Linux.cpp SX128x_Linux.hpp)
 target_include_directories(sx128x_linux_driver PUBLIC ${sx128x_driver_SOURCE_DIR} ${GPIOPlusPlus_SOURCE_DIR} ${SPPI_SOURCE_DIR})
 target_link_libraries(sx128x_linux_driver pthread GPIOPlusPlus SPPI sx128x_driver)
+
+
+add_executable(SX128x_Test Test.cpp)
+target_link_libraries(SX128x_Test sx128x_linux_driver)
