@@ -17,5 +17,11 @@ They will be automatically installed by CPM.
 ## Example
 See `Test.cpp`
 
+## In action
+![image](https://user-images.githubusercontent.com/34613827/97797249-8b041d80-1c56-11eb-9618-3c05292d82d3.png)
+
+![image](https://user-images.githubusercontent.com/34613827/97797279-bedf4300-1c56-11eb-96dd-e6801185be53.png)
+
+
 ## License
 LGPLv3
