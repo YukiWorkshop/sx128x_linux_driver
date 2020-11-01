@@ -28,7 +28,7 @@ CPMAddPackage(
 CPMAddPackage(
         NAME SPPI
         GITHUB_REPOSITORY YukiWorkshop/SPPI
-        VERSION 0.0.3
+        VERSION 0.0.4
 )
 
 add_library(sx128x_linux_driver SX128x_Linux.cpp SX128x_Linux.hpp)
