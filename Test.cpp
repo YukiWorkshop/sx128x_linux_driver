@@ -18,7 +18,15 @@
 
 #include "SX128x_Linux.hpp"
 
-int main() {
+#include <cstdio>
+#include <cstring>
+
+int main(int argc, char **argv) {
+	if (argc < 3) {
+		printf("Usage: SX128x_Test <tx|rx> <freq in MHz>\n");
+		return 1;
+	}
+
 	// Customize these pins by yourself
 	SX128x_Linux Radio("/dev/spidev0.0", 0,
 			   {
@@ -50,12 +58,12 @@ int main() {
 	ModulationParams2.PacketType = SX128x::PACKET_TYPE_LORA;
 	ModulationParams2.Params.LoRa.CodingRate = SX128x::LORA_CR_4_5;
 	ModulationParams2.Params.LoRa.Bandwidth = SX128x::LORA_BW_1600;
-	ModulationParams2.Params.LoRa.SpreadingFactor = SX128x::LORA_SF8;
+	ModulationParams2.Params.LoRa.SpreadingFactor = SX128x::LORA_SF10;
 
 	SX128x::PacketParams_t PacketParams2;
 	PacketParams2.PacketType = SX128x::PACKET_TYPE_LORA;
 	auto &l = PacketParams2.Params.LoRa;
-	l.PayloadLength = 253;
+	l.PayloadLength = 32;
 	l.HeaderType = SX128x::LORA_PACKET_FIXED_LENGTH;
 	l.PreambleLength = 12;
 	l.Crc = SX128x::LORA_CRC_ON;
@@ -63,12 +71,13 @@ int main() {
 
 	Radio.SetPacketType(SX128x::PACKET_TYPE_LORA);
 	puts("SetPacketType done");
-	Radio.SetModulationParams(&ModulationParams2);
+	Radio.SetModulationParams(ModulationParams2);
 	puts("SetModulationParams done");
-	Radio.SetPacketParams(&PacketParams2);
+	Radio.SetPacketParams(PacketParams2);
 	puts("SetPacketParams done");
 
-	Radio.SetRfFrequency(2486 * 1000000UL);
+	auto freq = strtol(argv[2], nullptr, 10);
+	Radio.SetRfFrequency(freq * 1000000UL);
 	puts("SetRfFrequency done");
 
 	// only used in GFSK, FLRC (4 bytes max) and BLE mode
@@ -85,6 +94,24 @@ int main() {
 		puts("Wow TX done");
 	};
 
+	Radio.callbacks.rxDone = [&] {
+		puts("Wow RX done");
+
+
+		SX128x::PacketStatus_t ps;
+		Radio.GetPacketStatus(&ps);
+
+		uint8_t recv_buf[253];
+		uint8_t rsz;
+		Radio.GetPayload(recv_buf, &rsz, 253);
+
+		write(STDOUT_FILENO, recv_buf, 32);
+
+		int8_t noise = ps.LoRa.RssiPkt - ps.LoRa.SnrPkt;
+		int8_t rscp = ps.LoRa.RssiPkt + ps.LoRa.SnrPkt;
+		printf("recvd %u bytes, RSCP: %d, RSSI: %d, Noise: %d, SNR: %d\n", rsz, rscp, ps.LoRa.RssiPkt, noise, ps.LoRa.SnrPkt);
+	};
+
 	auto IrqMask = SX128x::IRQ_RX_DONE | SX128x::IRQ_TX_DONE | SX128x::IRQ_RX_TX_TIMEOUT;
 	Radio.SetDioIrqParams(IrqMask, IrqMask, SX128x::IRQ_RADIO_NONE, SX128x::IRQ_RADIO_NONE);
 	puts("SetDioIrqParams done");
@@ -93,13 +120,25 @@ int main() {
 	puts("StartIrqHandler done");
 
 
-	while (1) {
-		char buf[253] = "12345678\n";
+	auto pkt_ToA = Radio.GetTimeOnAir();
 
-		Radio.SendPayload((uint8_t *) buf, 64, {SX128x::RADIO_TICK_SIZE_1000_US, 1000});
+	if (strcmp(argv[1], "tx") == 0) {
 
-		puts("SendPayload done");
-		usleep(200 * 1000);
+		while (1) {
+			char buf[253] = "12345678abcdefgh12345678abcdefg\n";
+
+			Radio.SendPayload((uint8_t *) buf, 32, {SX128x::RADIO_TICK_SIZE_1000_US, 1000});
+			puts("SendPayload done");
+
+			usleep(pkt_ToA * 1000 + 50);
+		}
+	} else {
+		Radio.SetRx({SX128x::RADIO_TICK_SIZE_1000_US, 0xFFFF});
+		puts("SetRx done");
+
+		while (1) {
+			sleep(1);
+		}
 	}
 
 }
