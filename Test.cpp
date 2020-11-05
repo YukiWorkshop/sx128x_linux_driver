@@ -22,9 +22,15 @@
 #include <cstring>
 
 int main(int argc, char **argv) {
-	if (argc < 3) {
-		printf("Usage: SX128x_Test <tx|rx> <freq in MHz>\n");
+	if (argc < 4) {
+		printf("Usage: SX128x_Test <tx|rx> <lora|flrc> <freq in MHz>\n");
 		return 1;
+	}
+
+	int modmode = 0;
+
+	if (strcmp(argv[2], "flrc") == 0) {
+		modmode = 1;
 	}
 
 	// Customize these pins by yourself
@@ -54,45 +60,74 @@ int main(int argc, char **argv) {
 	Radio.SetBufferBaseAddresses(0x00, 0x00);
 	puts("SetBufferBaseAddresses done");
 
-	SX128x::ModulationParams_t ModulationParams2;
-	ModulationParams2.PacketType = SX128x::PACKET_TYPE_LORA;
-	ModulationParams2.Params.LoRa.CodingRate = SX128x::LORA_CR_4_5;
-	ModulationParams2.Params.LoRa.Bandwidth = SX128x::LORA_BW_1600;
-	ModulationParams2.Params.LoRa.SpreadingFactor = SX128x::LORA_SF10;
 
-	SX128x::PacketParams_t PacketParams2;
-	PacketParams2.PacketType = SX128x::PACKET_TYPE_LORA;
-	auto &l = PacketParams2.Params.LoRa;
-	l.PayloadLength = 32;
-	l.HeaderType = SX128x::LORA_PACKET_FIXED_LENGTH;
-	l.PreambleLength = 12;
-	l.Crc = SX128x::LORA_CRC_ON;
-	l.InvertIQ = SX128x::LORA_IQ_NORMAL;
+	SX128x::ModulationParams_t ModulationParams;
+	SX128x::PacketParams_t PacketParams;
 
-	Radio.SetPacketType(SX128x::PACKET_TYPE_LORA);
+	if (modmode == 0) {
+		ModulationParams.PacketType = SX128x::PACKET_TYPE_LORA;
+		ModulationParams.Params.LoRa.CodingRate = SX128x::LORA_CR_4_8;
+		ModulationParams.Params.LoRa.Bandwidth = SX128x::LORA_BW_1600;
+		ModulationParams.Params.LoRa.SpreadingFactor = SX128x::LORA_SF7;
+
+		PacketParams.PacketType = SX128x::PACKET_TYPE_LORA;
+		auto &l = PacketParams.Params.LoRa;
+		l.PayloadLength = 253;
+		l.HeaderType = SX128x::LORA_PACKET_FIXED_LENGTH;
+		l.PreambleLength = 12;
+		l.Crc = SX128x::LORA_CRC_ON;
+		l.InvertIQ = SX128x::LORA_IQ_NORMAL;
+
+		Radio.SetPacketType(SX128x::PACKET_TYPE_LORA);
+	} else {
+		ModulationParams.PacketType = SX128x::PACKET_TYPE_FLRC;
+		auto &p = ModulationParams.Params.Flrc;
+		p.CodingRate = SX128x::FLRC_CR_1_2;
+		p.BitrateBandwidth = SX128x::FLRC_BR_0_325_BW_0_3;
+		p.ModulationShaping = SX128x::RADIO_MOD_SHAPING_BT_OFF;
+
+
+		PacketParams.PacketType = SX128x::PACKET_TYPE_FLRC;
+		auto &l = PacketParams.Params.Flrc;
+		l.PayloadLength = 127;
+		l.HeaderType = SX128x::RADIO_PACKET_VARIABLE_LENGTH;
+		l.PreambleLength = SX128x::PREAMBLE_LENGTH_32_BITS;
+		l.CrcLength = SX128x::RADIO_CRC_OFF;
+		l.SyncWordLength = SX128x::FLRC_SYNCWORD_LENGTH_4_BYTE;
+		l.SyncWordMatch = SX128x::RADIO_RX_MATCH_SYNCWORD_1;
+		l.Whitening = SX128x::RADIO_WHITENING_OFF;
+
+		Radio.SetPacketType(SX128x::PACKET_TYPE_FLRC);
+	}
+
 	puts("SetPacketType done");
-	Radio.SetModulationParams(ModulationParams2);
+	Radio.SetModulationParams(ModulationParams);
 	puts("SetModulationParams done");
-	Radio.SetPacketParams(PacketParams2);
+	Radio.SetPacketParams(PacketParams);
 	puts("SetPacketParams done");
 
-	auto freq = strtol(argv[2], nullptr, 10);
+	auto freq = strtol(argv[3], nullptr, 10);
 	Radio.SetRfFrequency(freq * 1000000UL);
 	puts("SetRfFrequency done");
 
-	// only used in GFSK, FLRC (4 bytes max) and BLE mode
-	uint8_t sw[] = { 0xDD, 0xA0, 0x96, 0x69, 0xDD };
-	Radio.SetSyncWord( 1, sw);
-	// only used in GFSK, FLRC
-	uint8_t crcSeedLocal[2] = {0x45, 0x67};
-	Radio.SetCrcSeed( crcSeedLocal );
-	Radio.SetCrcPolynomial( 0x0123 );
+	if (modmode == 1) {
+		// only used in GFSK, FLRC (4 bytes max) and BLE mode
+		uint8_t sw[] = {0xDD, 0xA0, 0x96, 0x69, 0xDD};
+		Radio.SetSyncWord(1, sw);
+		// only used in GFSK, FLRC
+		uint8_t crcSeedLocal[2] = {0x45, 0x67};
+		Radio.SetCrcSeed(crcSeedLocal);
+		Radio.SetCrcPolynomial(0x0123);
+//		Radio.SetWhiteningSeed(0x22);
+	}
 
 	std::cout << Radio.GetFirmwareVersion() << "\n";
 
 	Radio.callbacks.txDone = []{
 		puts("Wow TX done");
 	};
+
+	size_t pkt_count = 0;
 
 	Radio.callbacks.rxDone = [&] {
 		puts("Wow RX done");
@@ -105,11 +140,38 @@ int main(int argc, char **argv) {
 		uint8_t rsz;
 		Radio.GetPayload(recv_buf, &rsz, 253);
 
-		write(STDOUT_FILENO, recv_buf, 32);
+		uint8_t err_count = 0;
 
-		int8_t noise = ps.LoRa.RssiPkt - ps.LoRa.SnrPkt;
-		int8_t rscp = ps.LoRa.RssiPkt + ps.LoRa.SnrPkt;
-		printf("recvd %u bytes, RSCP: %d, RSSI: %d, Noise: %d, SNR: %d\n", rsz, rscp, ps.LoRa.RssiPkt, noise, ps.LoRa.SnrPkt);
+		for (size_t i=0; i<rsz; i++) {
+			uint8_t correct_value;
+			if (i % 2)
+				correct_value = 0x55;
+			else
+				correct_value = 0xaa;
+
+			if (recv_buf[i] != correct_value)
+				err_count++;
+		}
+
+//		for (size_t i=0; i<rsz; i++) {
+//			printf("%02x ", recv_buf[i]);
+//		}
+//
+//		puts("");
+
+		pkt_count++;
+		printf("Packet count: %ld\n", pkt_count);
+
+		printf("corrupted bytes: %u/%u, BER: %f%%\n", err_count, rsz, (double)err_count/rsz*100);
+
+		if (ps.packetType == SX128x::PACKET_TYPE_LORA) {
+			int8_t noise = ps.LoRa.RssiPkt - ps.LoRa.SnrPkt;
+			int8_t rscp = ps.LoRa.RssiPkt + ps.LoRa.SnrPkt;
+			printf("recvd %u bytes, RSCP: %d, RSSI: %d, Noise: %d, SNR: %d\n", rsz, rscp, ps.LoRa.RssiPkt, noise, ps.LoRa.SnrPkt);
+		} else if (ps.packetType == SX128x::PACKET_TYPE_FLRC) {
+			printf("recvd %u bytes, RSSI: %d\n", rsz, ps.Flrc.RssiSync);
+
+		}
 	};
 
 	auto IrqMask = SX128x::IRQ_RX_DONE | SX128x::IRQ_TX_DONE | SX128x::IRQ_RX_TX_TIMEOUT;
@@ -123,14 +185,22 @@ int main(int argc, char **argv) {
 	auto pkt_ToA = Radio.GetTimeOnAir();
 
 	if (strcmp(argv[1], "tx") == 0) {
+		uint8_t buf[253];
+
+		for (size_t i=0; i<sizeof(buf); i++) {
+			if (i % 2)
+				buf[i] = 0x55;
+			else
+				buf[i] = 0xaa;
+		}
 
 		while (1) {
-			char buf[253] = "12345678abcdefgh12345678abcdefg\n";
 
-			Radio.SendPayload((uint8_t *) buf, 32, {SX128x::RADIO_TICK_SIZE_1000_US, 1000});
+
+			Radio.SendPayload(buf, modmode == 0 ? 253 : 127, {SX128x::RADIO_TICK_SIZE_1000_US, 1000});
 			puts("SendPayload done");
 
-			usleep(pkt_ToA * 1000 + 50);
+			usleep((pkt_ToA + 20) * 1000);
 		}
 	} else {
 		Radio.SetRx({SX128x::RADIO_TICK_SIZE_1000_US, 0xFFFF});

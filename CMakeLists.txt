@@ -16,7 +16,7 @@ include(${CPM_DOWNLOAD_LOCATION})
 CPMAddPackage(
         NAME sx128x_driver
         GITHUB_REPOSITORY YukiWorkshop/sx128x_driver
-        VERSION 0.0.3
+        VERSION 0.0.4
 )
 
 CPMAddPackage(
